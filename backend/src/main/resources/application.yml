@@ -1,0 +1,79 @@
+spring:
+  application:
+    name: planner-backend
+  main:
+    banner-mode: off
+  jackson:
+    # Strict input: unknown fields, "20" for a number, NaN and lenient date parsing are all 400s.
+    default-leniency: false
+    serialization:
+      write-dates-as-timestamps: false
+    deserialization:
+      fail-on-unknown-properties: true
+      # 1.5 for an integer field (e.g. estimatedMinutes) is a 400, not silently truncated to 1.
+      accept-float-as-int: false
+    mapper:
+      allow-coercion-of-scalars: false
+    generator:
+      write-bigdecimal-as-plain: true
+  mvc:
+    # Unknown paths raise NoResourceFoundException -> JSON 404 via GlobalExceptionHandler.
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+  flyway:
+    locations: classpath:db/migration
+    # Never wipe user data; never adopt an unknown non-empty database silently.
+    clean-disabled: true
+    baseline-on-migrate: false
+    validate-on-migrate: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    # OpenAPI 3.1 allows descriptions next to $ref, so every field can be documented
+    version: openapi_3_1
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+    persist-authorization: false
+    display-request-duration: true
+  paths-to-match: /api/v1/**
+  # error responses are documented by OpenApiConfig.standardErrorResponses, not inferred from GlobalExceptionHandler
+  override-with-generic-response: false
+  default-produces-media-type: application/json
+  writer-with-order-by-keys: true
+
+server:
+  # Loopback only (LoopbackBindingGuard). Authentication exists, but there is no TLS: do not expose this on a network.
+  address: ${PLANNER_SERVER_ADDRESS:127.0.0.1}
+  port: ${PLANNER_SERVER_PORT:8080}
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
+    include-exception: false
+    whitelabel:
+      enabled: false
+
+planner:
+  datasource:
+    # Relative to the working directory; the default targets <repo>/data/planner.db when run from backend/.
+    path: ${PLANNER_DB_PATH:../data/planner.db}
+    busy-timeout: ${PLANNER_DB_BUSY_TIMEOUT:5s}
+    max-pool-size: 4
+  auth:
+    issuer: ${PLANNER_AUTH_ISSUER:planner-backend}
+    audience: ${PLANNER_AUTH_AUDIENCE:planner-api}
+    # TEMPORARY: access tokens do not expire (no exp claim). Set to true to restore the TTL below.
+    access-token-expires: ${PLANNER_AUTH_ACCESS_TOKEN_EXPIRES:false}
+    access-token-ttl: ${PLANNER_AUTH_ACCESS_TTL:15m}
+    refresh-token-ttl: ${PLANNER_AUTH_REFRESH_TTL:30d}
+    # Secure cookies need HTTPS; the default deployment is plain HTTP on loopback.
+    cookie-secure: ${PLANNER_AUTH_COOKIE_SECURE:false}
+    cookie-name: planner_refresh
+  cors:
+    # Local Vite dev server only (D-04). Comma-separated list.
+    allowed-origins: ${PLANNER_CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}

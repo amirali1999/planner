@@ -1,0 +1,5 @@
+# Test-only override (classpath:/config/ takes precedence over classpath:/application.yml).
+# Every test application context gets its own throwaway SQLite file under target/ — never data/planner.db.
+planner:
+  datasource:
+    path: target/test-db/planner-${random.uuid}.db
