@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ApiError } from '../../shared/api/client';
-import { todayIso } from '../../shared/date/calendar';
+import { addDays, todayIso } from '../../shared/date/calendar';
 import { formatNumber } from '../../shared/format';
 import { EmptyState, ErrorMessage, Loading } from '../../shared/ui/AsyncState';
 import { Icon } from '../../shared/ui/Icon';
@@ -16,15 +16,14 @@ import type { Goal } from '../goals/types';
 import { deadlineState } from '../goals/deadline';
 import { dueLine } from '../goals/goalBoardModel';
 import { dailyPlanApi, weeklyPlanApi } from '../planning/api';
+import { PlanScopePicker } from '../planning/PlanScopePicker';
 import { weekStart } from '../planning/weeklyModel';
-import { TodayPlanButton } from '../planning/TodayPlanButton';
-import { WeekPlanButton } from '../planning/WeekPlanButton';
-import { tasksApi } from '../tasks/api';
+import { taskNotesApi, tasksApi } from '../tasks/api';
 import { PriorityPicker } from '../tasks/PriorityPicker';
 import { TaskDetailDialog } from '../tasks/TaskDetailDialog';
 import type { Task } from '../tasks/types';
 import { focusApi, focusNotesApi } from './api';
-import { FocusNotesDialog } from './FocusNotesDialog';
+import { NotesDialog } from './NotesDialog';
 import { FocusItemForm } from './FocusItemForm';
 import { EMPTY_FOCUS_FORM, toCreateRequest } from './focusFormModel';
 import { buildFocusTree, filterFocusTree, type FocusNode, type GoalNode } from './focusTreeModel';
@@ -33,10 +32,12 @@ import { buildFocusTree, filterFocusTree, type FocusNode, type GoalNode } from '
 const PlannedToday = createContext<ReadonlySet<string>>(new Set());
 /** Ids of the tasks already put on this week (for the «به برنامه هفتگی» buttons). */
 const PlannedWeek = createContext<ReadonlySet<string>>(new Set());
+/** Ids of the tasks already put on next week. */
+const PlannedNextWeek = createContext<ReadonlySet<string>>(new Set());
 /** Opens the task pop-up (details + edit) for a task id. */
 const OpenTask = createContext<(taskId: string) => void>(() => {});
-/** Note counts per focus item + opening the notes pop-up. */
-const Notes = createContext<{ count: (id: string) => number; open: (item: { id: string; title: string; archived: boolean }) => void }>({ count: () => 0, open: () => {} });
+type NoteTarget = { kind: 'focus' | 'task'; id: string; title: string; archived: boolean };
+const Notes = createContext<{ count: (target: NoteTarget) => number; open: (target: NoteTarget) => void }>({ count: () => 0, open: () => {} });
 
 /**
  * «آیتم‌های تمرکز» (design ui/focus item.png): goal → focus item → task as an expandable table with title, progress,
@@ -46,9 +47,15 @@ export function FocusTreePage() {
   usePageTitle('آیتم‌های تمرکز');
   const today = todayIso();
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
-  const [notesItem, setNotesItem] = useState<{ id: string; title: string; archived: boolean } | null>(null);
-  const noteCounts = useApiData((signal) => focusNotesApi.counts(signal), []);
-  const notesCtx = { count: (id: string) => noteCounts.data?.find((c) => c.focusItemId === id)?.count ?? 0, open: setNotesItem };
+  const [notesItem, setNotesItem] = useState<NoteTarget | null>(null);
+  const focusNoteCounts = useApiData((signal) => focusNotesApi.counts(signal), []);
+  const taskNoteCounts = useApiData((signal) => taskNotesApi.counts(signal), []);
+  const noteCounts = {
+    focus: new Map(focusNoteCounts.data?.map(({ focusItemId, count }) => [focusItemId, count])),
+    task: new Map(taskNoteCounts.data?.map(({ taskId, count }) => [taskId, count])),
+  };
+  const notesCtx = { count: ({ kind, id }: NoteTarget) => noteCounts[kind].get(id) ?? 0, open: setNotesItem };
+  const taskNotesOpen = notesItem?.kind === 'task';
   const goals = useApiData((signal) => goalsApi.search('archived=false&sort=priority', signal), []);
   const items = useApiData((signal) => focusApi.list({ archived: 'false' }, signal), []);
   const todayPlan = useApiData((signal) => dailyPlanApi.get(today, signal), [today]);
@@ -56,6 +63,9 @@ export function FocusTreePage() {
   const thisWeek = weekStart(today);
   const weekPlan = useApiData((signal) => weeklyPlanApi.items(thisWeek, signal), [thisWeek]);
   const plannedWeek = new Set(weekPlan.data?.map((i) => i.task.id) ?? []);
+  const nextWeek = addDays(thisWeek, 7);
+  const nextWeekPlan = useApiData((signal) => weeklyPlanApi.items(nextWeek, signal), [nextWeek]);
+  const plannedNextWeek = new Set(nextWeekPlan.data?.map((i) => i.task.id) ?? []);
   const tasks = useApiData((signal) => tasksApi.list({ archived: 'false' }, signal), []);
   const allGoals = useApiData((signal) => goalsApi.list('all', signal), []);
   const goalIds = goals.data?.items.map((g) => g.id) ?? [];
@@ -75,9 +85,10 @@ export function FocusTreePage() {
     progress.reload();
     todayPlan.reload();
     weekPlan.reload();
+    nextWeekPlan.reload();
   };
-  const loading = !goals.data || !items.data || !tasks.data;
-  const error = goals.error ?? items.error ?? tasks.error;
+  const loading = !goals.data || !items.data || !tasks.data || !todayPlan.data || !weekPlan.data || !nextWeekPlan.data;
+  const error = goals.error ?? items.error ?? tasks.error ?? todayPlan.error ?? weekPlan.error ?? nextWeekPlan.error;
   const tree = goals.data && items.data && tasks.data ? buildFocusTree(goals.data.items, items.data, tasks.data) : null;
   const shown = tree ? filterFocusTree(tree, query) : null;
   const searching = query.trim() !== '';
@@ -121,15 +132,18 @@ export function FocusTreePage() {
           reload();
         }} />
 
-      <FocusNotesDialog item={notesItem} onClose={() => setNotesItem(null)} onChanged={noteCounts.reload} />
+      <NotesDialog item={notesItem} api={taskNotesOpen ? taskNotesApi : focusNotesApi}
+        detailsUrl={notesItem?.kind === 'focus' ? `/focus/${notesItem.id}` : undefined}
+        onClose={() => setNotesItem(null)} onChanged={taskNotesOpen ? taskNoteCounts.reload : focusNoteCounts.reload} />
       <TaskDetailDialog task={openTaskId ? tasks.data?.find((t) => t.id === openTaskId) ?? null : null} startEditing
         goals={allGoals.data ?? []} focusItems={items.data ?? []} onClose={() => setOpenTaskId(null)} onChanged={reload} />
 
       {error != null && <ErrorMessage error={error} onRetry={() => { goals.reload(); reload(); }} />}
       {loading && error == null && <Loading />}
-      {shown && (
+      {shown && !loading && error == null && (
         <PlannedToday.Provider value={plannedToday}>
         <PlannedWeek.Provider value={plannedWeek}>
+        <PlannedNextWeek.Provider value={plannedNextWeek}>
         <OpenTask.Provider value={setOpenTaskId}>
         <Notes.Provider value={notesCtx}>
         <div className="focus-table" role="region" aria-label="اهداف، آیتم‌های تمرکز و تسک‌ها" tabIndex={0}>
@@ -168,6 +182,7 @@ export function FocusTreePage() {
         </div>
         </Notes.Provider>
         </OpenTask.Provider>
+        </PlannedNextWeek.Provider>
         </PlannedWeek.Provider>
         </PlannedToday.Provider>
       )}
@@ -176,6 +191,19 @@ export function FocusTreePage() {
 }
 
 // ---------------------------------------------------------------------------------------------------------------- rows
+
+function NotesButton({ target }: { target: NoteTarget }) {
+  const notes = useContext(Notes);
+  const count = notes.count(target);
+  const subject = target.kind === 'task' ? 'تسک' : 'آیتم تمرکز';
+  const label = `یادداشت‌های ${subject} «${target.title}»`;
+  return (
+    <button type="button" className={`ft-notes${count ? ' ft-notes--has' : ''}`} aria-haspopup="dialog"
+      onClick={() => notes.open(target)} aria-label={`${label} (${count ? formatNumber(count) : 'خالی'})`} title={label}>
+      <Icon name="file" size={15} /> یادداشت{count > 0 && <span className="ft-notes__count">{formatNumber(count)}</span>}
+    </button>
+  );
+}
 
 function Chevron({ open, onToggle, controls, label }: { open: boolean; onToggle: () => void; controls: string; label: string }) {
   return (
@@ -247,8 +275,8 @@ function FocusRow({ node, index, open, onToggle, onChanged, canAdd }: {
   const item = node.item;
   const childrenId = useId();
   const notes = useContext(Notes);
-  const noteCount = notes.count(item.id);
-  const openNotes = () => notes.open({ id: item.id, title: item.title, archived: Boolean(item.archivedAt) });
+  const noteTarget: NoteTarget = { kind: 'focus', id: item.id, title: item.title, archived: Boolean(item.archivedAt) };
+  const openNotes = () => notes.open(noteTarget);
   const [adding, setAdding] = useState(false);
   const addId = useId();
   return (
@@ -269,10 +297,7 @@ function FocusRow({ node, index, open, onToggle, onChanged, canAdd }: {
                 <Icon name="plus" size={15} /> تسک
               </button>
             )}
-            <button type="button" className={`ft-notes${noteCount ? ' ft-notes--has' : ''}`} aria-haspopup="dialog" onClick={openNotes}
-              aria-label={noteCount ? `یادداشت‌ها (${formatNumber(noteCount)})` : 'یادداشت‌ها (خالی)'} title="یادداشت‌های این آیتم">
-              <Icon name="file" size={15} /> یادداشت{noteCount > 0 && <span className="ft-notes__count">{formatNumber(noteCount)}</span>}
-            </button>
+            <NotesButton target={noteTarget} />
           </span>
         <span className="ft-col ft-col--count" aria-label={`تعداد تسک: ${formatNumber(node.tasks.length)}`}>{formatNumber(node.tasks.length)}</span>
         <span className="ft-col ft-col--due ft-muted" title="آیتم تمرکز هنوز ددلاین ندارد">—</span>
@@ -336,7 +361,9 @@ function DirectTasks({ goalTitle, tasks, open, onToggle, onChanged }: {
 function TaskRow({ task, onChanged }: { task: Task; onChanged: () => void }) {
   const planned = useContext(PlannedToday).has(task.id);
   const onWeek = useContext(PlannedWeek).has(task.id);
+  const onNextWeek = useContext(PlannedNextWeek).has(task.id);
   const openTask = useContext(OpenTask);
+  const checkbox = useRef<HTMLInputElement>(null);
   const [done, setDone] = useState(task.status === 'done');
   const [synced, setSynced] = useState(task.status);
   const [saving, setSaving] = useState(false);
@@ -364,16 +391,18 @@ function TaskRow({ task, onChanged }: { task: Task; onChanged: () => void }) {
   return (
     <li className={`ft-row ft-row--task${done ? ' check-row--done' : ''}`}>
       <span className="ft-col ft-col--title">
-        <input id={id} type="checkbox" className="check" checked={done} disabled={saving} onChange={toggle} />
+        <input ref={checkbox} id={id} type="checkbox" className="check" checked={done} disabled={saving} onChange={toggle} />
         <label htmlFor={id} className="check-row__title">{task.title}</label>
         {error && <span className="field__error" role="alert">{error}</span>}
       </span>
-      <span className="ft-col ft-col--progress">
+      <span className="ft-col ft-col--progress ft-col--actions">
         <PriorityPicker task={task} onChanged={onChanged} />
+        <NotesButton target={{ kind: 'task', id: task.id, title: task.title, archived: Boolean(task.archivedAt) }} />
       </span>
       <span className="ft-col ft-col--plan">
-        <TodayPlanButton taskId={task.id} taskTitle={task.title} planned={planned} disabled={done} onPlanned={onChanged} alsoPlanWeek />
-        <WeekPlanButton taskId={task.id} taskTitle={task.title} planned={onWeek} disabled={done} onPlanned={onChanged} />
+        <PlanScopePicker taskId={task.id} taskTitle={task.title} taskDone={done} plannedToday={planned} plannedThisWeek={onWeek}
+          plannedNextWeek={onNextWeek} disabled={saving} focusTaskCheckbox={() => checkbox.current?.focus({ preventScroll: true })}
+          onChanged={onChanged} />
       </span>
       <span className="ft-col ft-col--menu">
         <MenuButton label={`گزینه‌های تسک «${task.title}»`} items={[

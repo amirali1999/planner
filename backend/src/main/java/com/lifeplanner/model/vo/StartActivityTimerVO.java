@@ -1,8 +1,11 @@
 package com.lifeplanner.model.vo;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 @Schema(description = "Start recording actual activity now.")
 public record StartActivityTimerVO(
  @NotBlank @Size(max=200) @Schema(description = "What you are doing.", example = "مطالعه") String title,
- @NotBlank @Schema(description = "IANA timezone for splitting local days.", example = "Asia/Tehran") String timeZone) {}
+ @NotBlank @Schema(description = "IANA timezone for splitting local days.", example = "Asia/Tehran") String timeZone,
+ @Min(1) @Max(120) @Schema(description = "Optional Pomodoro duration in minutes. Null keeps the ordinary open-ended activity timer behavior.", example = "25", minimum = "1", maximum = "120") Integer plannedMinutes) {}

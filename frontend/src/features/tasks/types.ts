@@ -1,4 +1,5 @@
 import type { IsoDate } from '../../shared/date/calendar';
+import type { Note } from '../../shared/api/notes';
 
 export type TaskStatus = 'not_started' | 'doing' | 'done';
 export type TaskPriority = 'low' | 'medium' | 'high';
@@ -63,4 +64,8 @@ export interface TaskFilters {
   goalId?: string;
   focusItemId?: string;
   archived: ArchiveFilter;
+}
+
+export interface TaskNote extends Note {
+  taskId: string;
 }

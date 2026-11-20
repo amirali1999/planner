@@ -48,7 +48,7 @@ public class ActivityLogController {
 
     @Operation(summary = "Record an actual activity", description = "Records what you actually did in a closed local-time interval. It never changes a task or plan. Intervals of the same day may touch but cannot overlap.")
     @ApiResponse(responseCode = "201", description = "The recorded activity.", headers = {@Header(name = "Location", description = "URL of the created resource.", schema = @Schema(type = "string"))})
-    @ApiResponse(responseCode = "409", description = "activity_log_overlap (details.activityLogId identifies the other activity).")
+    @ApiResponse(responseCode = "409", description = "activity_log_overlap (details.activityLogId identifies the other activity) or activity_timer_overlap.")
     @PostMapping
     public ResponseEntity<ActivityLogSrv> create(@io.swagger.v3.oas.annotations.parameters.RequestBody(description = "The actual activity and its local-time interval.", required = true) @Valid @RequestBody CreateActivityLogVO request) {
         ActivityLogSrv created = service.create(request);
@@ -58,7 +58,7 @@ public class ActivityLogController {
     @Operation(summary = "Replace an actual activity", description = "Edits all user-controlled fields of one of your activity logs. Intervals may touch but cannot overlap.")
     @ApiResponse(responseCode = "200", description = "The updated activity.")
     @ApiResponse(responseCode = "404", description = "Activity log not found (or another user's).")
-    @ApiResponse(responseCode = "409", description = "activity_log_overlap.")
+    @ApiResponse(responseCode = "409", description = "activity_log_overlap or activity_timer_overlap.")
     @PutMapping("/{activityLogId}")
     public ActivityLogSrv update(@Parameter(description = "Id of one of your activity logs.", example = "0b6d1c3e-5a7f-4c2e-9d1b-2f8e6a4c7b10") @PathVariable String activityLogId,
                                  @io.swagger.v3.oas.annotations.parameters.RequestBody(description = "Full replacement of the editable fields.", required = true) @Valid @RequestBody UpdateActivityLogVO request) {

@@ -6,14 +6,21 @@ export function resizedActivityEnd(start: number, end: number, delta: number, li
   return clamp(end + snap(delta, 5), start + 1, Math.min(limit, 1440));
 }
 
+/** Five-minute drag steps, preserving one-minute records and the previous activity's boundary. */
+export function resizedActivityStart(start: number, end: number, delta: number, limit = 0): number {
+  return clamp(start + snap(delta, 5), Math.max(limit, 0), end - 1);
+}
+
+export type ActivityResizeEdge = 'start' | 'end';
+
 interface Gesture {
-  id: string; pointerId: number; start: number; end: number; limit: number;
+  id: string; edge: ActivityResizeEdge; pointerId: number; start: number; end: number; limit: number;
   y0: number; y: number; scroll0: number; preview: number; moved: boolean;
 }
 
 export function useActivityResize(
   scroll: RefObject<HTMLDivElement | null>, zoom: number, date: string,
-  commit: (id: string, endMinute: number) => void,
+  commit: (id: string, edge: ActivityResizeEdge, minute: number) => void,
 ) {
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const current = useRef<Gesture | null>(null);
@@ -30,7 +37,9 @@ export function useActivityResize(
       if (!g) return;
       const deltaPx = g.y - g.y0 + (scroll.current?.scrollTop ?? 0) - g.scroll0;
       update({ ...g, moved: g.moved || Math.abs(deltaPx) >= 4,
-        preview: resizedActivityEnd(g.start, g.end, deltaPx / (52 * zoom) * 60, g.limit) });
+        preview: g.edge === 'start'
+          ? resizedActivityStart(g.start, g.end, deltaPx / (52 * zoom) * 60, g.limit)
+          : resizedActivityEnd(g.start, g.end, deltaPx / (52 * zoom) * 60, g.limit) });
     }
     const move = (event: PointerEvent) => {
       if (event.pointerId !== current.current?.pointerId) return;
@@ -42,7 +51,8 @@ export function useActivityResize(
       const g = current.current;
       if (!g || event.pointerId !== g.pointerId) return;
       update(null);
-      if (event.type === 'pointerup' && g.moved && g.preview !== g.end) commitRef.current(g.id, g.preview);
+      const initial = g.edge === 'start' ? g.start : g.end;
+      if (event.type === 'pointerup' && g.moved && g.preview !== initial) commitRef.current(g.id, g.edge, g.preview);
     };
     const key = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); update(null); } };
     function autoScroll() {
@@ -68,11 +78,12 @@ export function useActivityResize(
     };
   }, [Boolean(gesture), zoom]);
 
-  function begin(event: ReactPointerEvent<HTMLElement>, id: string, start: number, end: number, limit = 1440) {
+  function begin(event: ReactPointerEvent<HTMLElement>, id: string, edge: ActivityResizeEdge, start: number, end: number,
+    limit = edge === 'start' ? 0 : 1440) {
     if (event.button !== 0) return;
     event.preventDefault(); event.stopPropagation();
-    update({ id, pointerId: event.pointerId, start, end, limit, y0: event.clientY, y: event.clientY,
-      scroll0: scroll.current?.scrollTop ?? 0, preview: end, moved: false });
+    update({ id, edge, pointerId: event.pointerId, start, end, limit, y0: event.clientY, y: event.clientY,
+      scroll0: scroll.current?.scrollTop ?? 0, preview: edge === 'start' ? start : end, moved: false });
   }
   return { gesture, begin };
 }

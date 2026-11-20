@@ -1,3 +1,5 @@
+import type { Note } from '../../shared/api/notes';
+
 export type FocusKind = 'project' | 'book' | 'course' | 'area' | 'other';
 export type FocusStatus = 'not_started' | 'doing' | 'done';
 export type FocusArchiveFilter = 'false' | 'true' | 'all';
@@ -43,10 +45,6 @@ export interface FocusFilters {
 }
 
 /** GET /focus-items/{id}/notes — a free-text note of a focus item (not a task). */
-export interface FocusItemNote {
-  id: string;
+export interface FocusItemNote extends Note {
   focusItemId: string;
-  body: string;
-  createdAt: string;
-  updatedAt: string;
 }

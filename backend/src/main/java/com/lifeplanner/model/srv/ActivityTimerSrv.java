@@ -5,4 +5,5 @@ import java.time.Instant;
 public record ActivityTimerSrv(
  @Schema(description = "Activity title.", example = "مطالعه") String title,
  @Schema(description = "Actual start instant in UTC.", example = "2026-11-14T07:00:00Z") Instant startedAt,
- @Schema(description = "IANA timezone captured at start.", example = "Asia/Tehran") String timeZone) {}
+ @Schema(description = "IANA timezone captured at start.", example = "Asia/Tehran") String timeZone,
+ @Schema(description = "Pomodoro duration in minutes, or null for an open-ended activity timer.", example = "25", minimum = "1", maximum = "120") Integer plannedMinutes) {}

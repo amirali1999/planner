@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { ErrorMessage } from '../../shared/ui/AsyncState';
 import { Icon } from '../../shared/ui/Icon';
-import { pauseTimer, remaining, resetTimer, startTimer, type TimerState } from './dashboardModel';
+import { pauseTimer, persistedPomodoroRemaining, remaining, resetTimer, startTimer, type TimerState } from './dashboardModel';
 import { clampMinutes, DEG_PER_MIN, dragMinutes, MAX_DEG, mmss, polar, ticksAround } from './timerDial';
 
 const STORE_KEY = 'planner.focusMinutes';
@@ -11,6 +12,20 @@ const H = 96; // a flat arc: only the top of a large circle is shown (owner: low
 const CX = W / 2;
 const CY = 222;
 const R = 200;
+
+export interface FocusTimerActivitySession {
+  title: string;
+  startedAt: string;
+  plannedMinutes: number;
+}
+
+export interface FocusTimerActivityIntegration {
+  session: FocusTimerActivitySession | null;
+  blocked: boolean;
+  onStart: (title: string, plannedMinutes: number) => Promise<void>;
+  onStop: () => Promise<void>;
+  onCancel: () => Promise<void>;
+}
 
 function storedMinutes(): number {
   try {
@@ -47,19 +62,32 @@ function useEased(target: number, instant: boolean): number {
 /**
  * Focus timer (owner design, English text): the minutes with − / +, and a half-circle dial whose ticks slide under a
  * fixed needle. Drag the dial (left = more), scroll it, or use the arrow keys; while running it turns with the
- * countdown. Client-only: sessions are not stored (no time-log API yet); the chosen length is remembered per device.
+ * countdown. The dashboard instance stays client-only; the activity-log instance supplies persisted start/stop callbacks.
+ * The chosen length is remembered per device in both places.
  */
-export function FocusTimer() {
+export function FocusTimer({ activity }: { activity?: FocusTimerActivityIntegration } = {}) {
   const [minutes, setMinutes] = useState(storedMinutes);
   const [timer, setTimer] = useState<TimerState>(() => resetTimer(storedMinutes() * 60));
   const [now, setNow] = useState(() => Date.now());
+  const [askingTitle, setAskingTitle] = useState(false);
+  const [activityTitle, setActivityTitle] = useState('');
+  const [activityError, setActivityError] = useState<unknown>(null);
+  const [activityPending, setActivityPending] = useState(false);
   const [drag, setDrag] = useState<{ x: number; start: number; value: number; px: number } | null>(null);
   const svg = useRef<SVGSVGElement>(null);
   const repeat = useRef<number | undefined>(undefined);
-  const running = timer.startedAt != null;
-  const left = remaining(timer, now);
-  const started = running || left !== timer.durationSec;
+  const localRunning = timer.startedAt != null;
+  const running = activity ? activity.session != null : localRunning;
+  const left = activity
+    ? activity.session
+      ? persistedPomodoroRemaining(Date.parse(activity.session.startedAt), activity.session.plannedMinutes, now)
+      : minutes * 60
+    : remaining(timer, now);
+  const started = activity ? activity.session != null : running || left !== timer.durationSec;
   const finished = left === 0;
+  const autoStoppedSession = useRef<string | null>(null);
+  const stopActivityRef = useRef(activity?.onStop);
+  stopActivityRef.current = activity?.onStop;
 
   useEffect(() => {
     if (!running) return;
@@ -67,9 +95,26 @@ export function FocusTimer() {
     return () => window.clearInterval(id);
   }, [running]);
   useEffect(() => {
-    if (running && finished) setTimer((t) => pauseTimer(t, Date.now()));
-  }, [running, finished]);
+    if (!activity && running && finished) setTimer((t) => pauseTimer(t, Date.now()));
+  }, [activity, running, finished]);
   useEffect(() => () => window.clearInterval(repeat.current), []);
+  useEffect(() => {
+    if (!activity?.session) return;
+    setMinutes(activity.session.plannedMinutes);
+    setTimer(resetTimer(activity.session.plannedMinutes * 60));
+  }, [activity?.session?.plannedMinutes, activity?.session?.startedAt]);
+  useEffect(() => {
+    const sessionId = activity?.session?.startedAt;
+    if (!sessionId || !finished || autoStoppedSession.current === sessionId) return;
+    const stopActivity = stopActivityRef.current;
+    if (!stopActivity) return;
+    autoStoppedSession.current = sessionId;
+    setActivityPending(true);
+    void stopActivity()
+      .then(() => setActivityError(null))
+      .catch(setActivityError)
+      .finally(() => setActivityPending(false));
+  }, [activity?.session?.startedAt, finished]);
 
   function choose(m: number) {
     const v = clampMinutes(Math.round(m));
@@ -132,6 +177,49 @@ export function FocusTimer() {
     }
   }
 
+  async function beginActivity(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activity || !activityTitle.trim()) return;
+    setActivityPending(true);
+    setActivityError(null);
+    try {
+      await activity.onStart(activityTitle.trim(), minutes);
+      setActivityTitle('');
+      setAskingTitle(false);
+      setNow(Date.now());
+    } catch (cause) {
+      setActivityError(cause);
+    } finally {
+      setActivityPending(false);
+    }
+  }
+
+  async function endActivity() {
+    if (!activity || !activity.session || activityPending) return;
+    setActivityPending(true);
+    setActivityError(null);
+    try {
+      await activity.onStop();
+    } catch (cause) {
+      setActivityError(cause);
+    } finally {
+      setActivityPending(false);
+    }
+  }
+
+  async function cancelActivity() {
+    if (!activity || !activity.session || activityPending) return;
+    setActivityPending(true);
+    setActivityError(null);
+    try {
+      await activity.onCancel();
+    } catch (cause) {
+      setActivityError(cause);
+    } finally {
+      setActivityPending(false);
+    }
+  }
+
   const ticks = ticksAround(dial);
   const arc = (r: number) => {
     const a = polar(CX, CY, r, -(MAX_DEG + 6));
@@ -166,6 +254,20 @@ export function FocusTimer() {
           <Icon name="minus" size={26} />
         </button>
       </div>
+
+      {activity?.session && <p className="ftimer__activity-title" dir="rtl" lang="fa">{activity.session.title}</p>}
+      {activity && askingTitle && !running && (
+        <form className="ftimer__activity-form" dir="rtl" lang="fa" onSubmit={beginActivity}>
+          <label htmlFor="pomodoro-activity-title">روی چه کاری می‌خواهید تمرکز کنید؟</label>
+          <input id="pomodoro-activity-title" autoFocus required maxLength={200} value={activityTitle}
+            onChange={(event) => setActivityTitle(event.target.value)} placeholder="عنوان فعالیت" />
+          <div>
+            <button className="button" disabled={activityPending}>شروع پومودورو</button>
+            <button type="button" className="button button--secondary" disabled={activityPending}
+              onClick={() => { setAskingTitle(false); setActivityError(null); }}>انصراف</button>
+          </div>
+        </form>
+      )}
 
       <div className="ftimer__dialbox">
         <svg ref={svg} className={`ftimer__dial${drag ? ' ftimer__dial--drag' : ''}${running ? ' ftimer__dial--running' : ''}`}
@@ -204,27 +306,41 @@ export function FocusTimer() {
           <line x1={CX} y1={CY - R - 6} x2={CX} y2={CY - R + 22} className="ftimer__needle" />
         </svg>
         <div className="ftimer__actions">
-          {finished ? (
+          {!activity && finished ? (
             <button type="button" className="ftimer__go" onClick={() => setTimer(resetTimer(minutes * 60))}>
               <Icon name="reset" size={18} /> Again
             </button>
           ) : (
-            <button type="button" className="ftimer__go" aria-label={running ? 'Pause' : started ? 'Resume' : 'Start'}
+            <button type="button" className="ftimer__go"
+              aria-label={running ? activity ? 'Stop and log Pomodoro' : 'Pause' : started ? 'Resume' : 'Start'}
+              disabled={activityPending || Boolean(activity && !running && (activity.blocked || askingTitle))}
               onClick={() => {
+                if (activity) {
+                  if (running) void endActivity();
+                  else { setActivityError(null); setAskingTitle(true); }
+                  return;
+                }
                 const t = Date.now();
                 setNow(t);
                 setTimer((s) => (running ? pauseTimer(s, t) : startTimer(s, t)));
               }}>
-              <Icon name={running ? 'pause' : 'play'} size={18} /> {running ? 'Pause' : started ? 'Resume' : 'Start'}
+              <Icon name={running ? 'pause' : 'play'} size={18} /> {running ? activity ? 'Stop' : 'Pause' : started ? 'Resume' : 'Start'}
             </button>
           )}
-          {started && !finished && (
+          {activity && running && (
+            <button type="button" className="ftimer__reset" aria-label="Cancel Pomodoro without logging" title="لغو بدون ثبت"
+              disabled={activityPending} onClick={() => { void cancelActivity(); }}>
+              <Icon name="reset" size={18} />
+            </button>
+          )}
+          {!activity && started && !finished && (
             <button type="button" className="ftimer__reset" aria-label="Reset" title="Reset" onClick={() => setTimer(resetTimer(minutes * 60))}>
               <Icon name="reset" size={18} />
             </button>
           )}
         </div>
       </div>
+      {activityError != null && <ErrorMessage error={activityError} />}
       {finished && <p className="visually-hidden" role="status">Focus session finished.</p>}
     </section>
   );

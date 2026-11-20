@@ -49,7 +49,7 @@ class ActivityLogRestartTest {
             assertThat(created.statusCode()).isEqualTo(201);
             id = JsonPath.read(created.body(), "$.id");
             assertThat(send("POST", api(context) + "/activity-timer", """
-                    {"title":"تایمر ماندگار","timeZone":"Asia/Tehran"}
+                    {"title":"تایمر ماندگار","timeZone":"Asia/Tehran","plannedMinutes":25}
                     """).statusCode()).isEqualTo(200);
         }
         try (ConfigurableApplicationContext context = start(db)) {
@@ -59,6 +59,8 @@ class ActivityLogRestartTest {
             assertThat((String) JsonPath.read(listed.body(), "$[0].title")).isEqualTo("کار واقعی");
             assertThat((String) JsonPath.read(send("GET", api(context) + "/activity-timer", null).body(), "$.title"))
                     .isEqualTo("تایمر ماندگار");
+            assertThat((Integer) JsonPath.read(send("GET", api(context) + "/activity-timer", null).body(), "$.plannedMinutes"))
+                    .isEqualTo(25);
         }
     }
 }

@@ -25,24 +25,37 @@ public class ActivityTimerService {
   try { ZoneId.of(request.timeZone()); } catch(DateTimeException e) {
    throw new ApiException.ValidationException("منطقه زمانی معتبر نیست.",Map.of("timeZone","invalid_value"));
   }
-  ActivityTimerSrv timer=new ActivityTimerSrv(request.title().trim(),clock.instant(),request.timeZone());
+  ActivityTimerSrv timer=new ActivityTimerSrv(request.title().trim(),clock.instant(),request.timeZone(),request.plannedMinutes());
+  for(var interval:ActivityTimerIntervals.split(timer,ActivityTimerIntervals.protectedFinish(timer,clock.instant()))) {
+   logs.requireFreeForTimer(interval.date(),interval.startMinute(),interval.endMinute());
+  }
   repository.insert(timer); return timer;
  }
  @Transactional
  public List<ActivityLogSrv> stop() {
   ActivityTimerSrv timer=get();
   if(timer==null) return List.of();
-  ZoneId zone=ZoneId.of(timer.timeZone());
-  var start=timer.startedAt().atZone(zone);
-  var finish=clock.instant().atZone(zone);
-  if(finish.isBefore(start)) throw new ApiException.ConflictException("clock_changed","ساعت سیستم از زمان شروع عقب‌تر است.",Map.of());
+  Instant now=clock.instant();
+  if(now.isBefore(timer.startedAt())) throw new ApiException.ConflictException("clock_changed","ساعت سیستم از زمان شروع عقب‌تر است.",Map.of());
+  Instant finishInstant=ActivityTimerIntervals.actualFinish(timer,now);
   List<ActivityLogSrv> result=new ArrayList<>();
-  for(LocalDate day=start.toLocalDate(); !day.isAfter(finish.toLocalDate()); day=day.plusDays(1)) {
-   int from=day.equals(start.toLocalDate()) ? start.getHour()*60+start.getMinute() : 0;
-   int to=day.equals(finish.toLocalDate()) ? finish.getHour()*60+finish.getMinute() : 1440;
-   if(day.equals(start.toLocalDate()) && day.equals(finish.toLocalDate())) to=Math.max(from+1,to);
-   if(to>from) result.add(logs.create(new CreateActivityLogVO(day,timer.title(),ActivityCategory.PERSONAL,from,to,null)));
+  for(var interval:ActivityTimerIntervals.split(timer,finishInstant)) {
+   if(timer.plannedMinutes()==null) {
+    var conflict=logs.firstOverlapForTimer(interval.date(),interval.startMinute(),interval.endMinute());
+    if(conflict.isPresent()) {
+     int freeEnd=Math.min(interval.endMinute(),conflict.get().startMinute());
+     if(freeEnd>interval.startMinute()) {
+      result.add(logs.createFromTimer(new CreateActivityLogVO(interval.date(),timer.title(),ActivityCategory.PERSONAL,
+       interval.startMinute(),freeEnd,null)));
+     }
+     repository.delete(); return result;
+    }
+   }
+   result.add(logs.createFromTimer(new CreateActivityLogVO(interval.date(),timer.title(),ActivityCategory.PERSONAL,
+    interval.startMinute(),interval.endMinute(),null)));
   }
   repository.delete(); return result;
  }
+ @Transactional
+ public void cancel() { repository.delete(); }
 }

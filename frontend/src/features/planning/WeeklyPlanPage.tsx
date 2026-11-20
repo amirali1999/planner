@@ -5,17 +5,19 @@ import { addDays, isIsoDate, todayIso, type IsoDate } from '../../shared/date/ca
 import { formatJalaliDate, formatNumber } from '../../shared/format';
 import { EmptyState, ErrorMessage, Loading } from '../../shared/ui/AsyncState';
 import { Icon, type IconName } from '../../shared/ui/Icon';
+import { MenuButton } from '../../shared/ui/MenuButton';
 import { useApiData } from '../../shared/ui/useApiData';
 import { usePageTitle } from '../../shared/ui/usePageTitle';
 import { weekDays } from '../dashboard/dashboardModel';
 import { focusApi } from '../focus/api';
 import type { FocusItem, FocusKind } from '../focus/types';
 import { goalsApi } from '../goals/api';
-import { TaskDetailDialog } from '../tasks/TaskDetailDialog';
 import type { Goal } from '../goals/types';
 import { tasksApi } from '../tasks/api';
 import { TASK_PRIORITY_LABELS, TASK_PRIORITY_ORDER } from '../tasks/labels';
 import { PriorityPicker } from '../tasks/PriorityPicker';
+import { TaskDetailDialog } from '../tasks/TaskDetailDialog';
+import { TaskStatusPicker } from '../tasks/TaskStatusPicker';
 import type { TaskPriority } from '../tasks/types';
 import { dailyPlanApi, weeklyPlanApi } from './api';
 import { TimeboxView } from './TimeboxView';
@@ -218,17 +220,34 @@ function Row({ row, goal, item, weekStart: shownWeek, days, plannedToday, onChan
 }) {
   const t = row.task;
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [savingDay, setSavingDay] = useState(false);
   const [dayError, setDayError] = useState<string | null>(null);
   async function removeFromWeek() {
     setSaving(true);
-    setError(null);
     try {
       await weeklyPlanApi.removeTask(shownWeek, t.id);
       onChanged();
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'از برنامهٔ هفته خارج نشد.');
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function moveToNextWeek() {
+    setSaving(true);
+    try {
+      // Add first so a duplicate/error in the destination never removes the current plan entry.
+      await weeklyPlanApi.addTask(addDays(shownWeek, 7), t.id);
+      await weeklyPlanApi.removeTask(shownWeek, t.id);
+      onChanged();
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function markDone() {
+    if (t.status === 'done') return;
+    setSaving(true);
+    try {
+      await tasksApi.update(t.id, { status: 'done' });
+      onChanged();
     } finally {
       setSaving(false);
     }
@@ -281,17 +300,14 @@ function Row({ row, goal, item, weekStart: shownWeek, days, plannedToday, onChan
         <TodayPlanButton taskId={t.id} taskTitle={t.title} planned={plannedToday} disabled={t.status === 'done'} onPlanned={onChanged} short />
       </td>
       <td className="weekly-cell weekly-cell--center">
-        {row.plannedInWeek ? (
-          <button type="button" className={`status-chip status-chip--${row.status}`} disabled={saving} onClick={() => void removeFromWeek()}
-            aria-label={`خارج کردن «${t.title}» از برنامهٔ این هفته`}
-            title="کلیک: خارج کردن از برنامهٔ این هفته">
-            {STATUS_LABELS[row.status]}
-          </button>
-        ) : (
-          <span className={`status-chip status-chip--${row.status}`}
-            title="این تسک فقط به‌دلیل ددلاین در این جدول دیده می‌شود">{STATUS_LABELS[row.status]}</span>
-        )}
-        {error && <span className="field__error" role="alert">{error}</span>}
+        <span className="weekly-status-actions">
+          <TaskStatusPicker task={t} onChanged={onChanged} disabled={saving} />
+          <MenuButton label={`گزینه‌های برنامهٔ «${t.title}»`} items={[
+            { label: 'خارج کردن از برنامه', danger: true, disabled: saving || !row.plannedInWeek, onSelect: removeFromWeek },
+            { label: 'انتقال به هفتهٔ بعد', disabled: saving || !row.plannedInWeek, onSelect: moveToNextWeek },
+            { label: 'انجام‌شده', disabled: saving, onSelect: markDone },
+          ]} />
+        </span>
       </td>
     </tr>
   );

@@ -80,18 +80,41 @@ Response returns `{inboxItemId, status:"processed", createdEntityType:"task", cr
 
 ## Cross-cutting API requirements
 
+### Task notes (owner request 2026-11-20)
+
+| Method | Endpoint | Behavior |
+|---|---|---|
+| GET | `/tasks/{taskId}/notes` | Lists an owned task's notes in descending creation order, with ID as the tie breaker. Archived tasks retain readable notes. |
+| POST | `/tasks/{taskId}/notes` | Creates a note for an active task. Returns 201, `Location` and the saved note. |
+| GET | `/task-notes/counts` | Returns `[{taskId,count}]` for owned, active tasks with at least one note. |
+| PUT | `/task-notes/{noteId}` | Replaces the note text and returns the saved note with the original `createdAt`. |
+| DELETE | `/task-notes/{noteId}` | Explicitly deletes the note and returns 204. |
+
+The write body for POST and PUT is `{ "body": "..." }` with up to 4000 characters of nonblank plain text.
+The response contains `id`, `taskId`, `body`, `createdAt` and `updatedAt`. An unknown or foreign task or note returns 404.
+Writes against an archived task's notes return 409 `task_archived`. Permanent task deletion removes its notes in the same transaction.
+
 ### Actual daily activity logs (owner request 2026-11-14)
 `GET /activity-logs?date=YYYY-MM-DD` returns your actual activities ordered by start; an empty day returns `[]` without writes.
 `POST /activity-logs` creates `{date,title,category,startMinute,endMinute}` (201 + Location).
 `PUT /activity-logs/{id}` replaces those fields (200); `DELETE /activity-logs/{id}` explicitly deletes the record (204).
 Category is `work|study|rest|personal`; title is 1–200 trimmed characters. Times use minute precision,
 `0 <= startMinute < endMinute <= 1440`. Same-user/day intervals may touch but not overlap (409 `activity_log_overlap`).
+Manual create/update also rejects an interval occupied by the user's running timer (409 `activity_timer_overlap`); this
+prevents a later timer stop from discovering a conflict that the UI allowed while the timer was running.
 Foreign or missing records return 404. These records have no effect on tasks, plans or goal progress.
 Optional `taskId` links an owned active task (404 foreign, 409 archived); null on PUT clears it. Permanent task deletion detaches the log.
-Timer: GET /activity-timer returns the user's running timer or null. POST with {title,timeZone} captures the server start instant
-and IANA timezone (409 timer_running if already running). POST /activity-timer/stop atomically writes final intervals,
-split by local midnight, then clears the timer. Minimum duration is one minute; repeated stop is a no-op.
-Overlap returns 409 and preserves the running timer. GET never creates or extends an interval.
+Timer: GET /activity-timer returns the user's running timer or null. POST with `{title,timeZone,plannedMinutes?}` captures the server start instant
+and IANA timezone (409 `timer_running` if already running, `activity_log_overlap` if its initial/protected interval is occupied).
+For conflict prevention, a Pomodoro reserves its complete planned interval while an open-ended timer checks at least its first minute.
+`plannedMinutes` is nullable; when present it is a Pomodoro duration from 1..120 minutes
+and is returned by GET so the client can restore the countdown and planned timeline block after reload. POST `/activity-timer/stop` atomically writes final intervals,
+split by local midnight, then clears the timer. An early Pomodoro stop records elapsed time; a late stop is capped at `startedAt + plannedMinutes`.
+Minimum duration is one minute; repeated stop is a no-op. A null `plannedMinutes` preserves the open-ended timer behavior.
+When an open-ended timer reaches a pre-existing later log, Stop records only the free prefix up to that log and clears
+the timer instead of creating an overlap or leaving it stuck. A Pomodoro overlap (possible only for legacy/concurrent data)
+returns 409 and preserves the timer. GET never creates or extends an interval.
+DELETE `/activity-timer` explicitly discards a running timer without creating a log and is idempotent (204), providing recovery for a legacy/racing conflict.
 This capability is brought forward from MVP v2 by owner request.
 - All writes validate input at both DTO and service level; use transactions. SQL parameterized.
 - Unknown enum or malformed date => 400; nonexistent IDs => 404; cycle/duplicate => 409.

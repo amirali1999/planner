@@ -6,22 +6,24 @@
 روی هر فعالیت در خط زمان برای ویرایش یا حذف تأییدشده کلیک کنید. بازه‌ها با دقت یک دقیقه ثبت می‌شوند؛ هم‌پوشانی مجاز نیست و فعالیت عبوری از نیمه‌شب باید در دو روز ثبت شود.
 روی زمان خالی خط زمان کلیک کنید، داخل بلاک بنویسید و Enter بزنید؛ بازهٔ پیش‌فرض ۳۰ دقیقه در پنل قابل تغییر است.
 پس از کلیک روی بلاک، دسته و تسک مرتبط را انتخاب و ذخیره کنید. خط مرجانی ساعت جاری را نشان می‌دهد.
-در کارت تایمر سمت چپ، عنوان فعالیت را بنویسید و «شروع» را بزنید. بلاک هنگام اجرا ثابت است و تنها «توقف و ثبت» بازهٔ نهایی را می‌سازد.
+در کارت تایمر سمت چپ «شروع» را بزنید، عنوان فعالیت را وارد کنید و تایمر را آغاز کنید. بلاک هنگام اجرا ثابت است و تنها «ثبت و پایان» بازهٔ نهایی را می‌سازد.
+کارت پومودورو زیر آن قرار دارد: مدت را انتخاب و Start را بزنید، عنوان کاری را که می‌خواهید روی آن تمرکز کنید وارد کنید و پومودورو را شروع کنید.
+بلاک پومودورو با اندازهٔ مدت انتخابی همان لحظه روی خط زمان امروز ظاهر می‌شود. Stop زودهنگام همان بلاک را به زمان واقعی کوتاه و ثبت می‌کند؛ Start بعدی عنوان تازه می‌پرسد و نشست/بلاک جدیدی می‌سازد. پایان طبیعی نیز خودکار ثبت می‌شود.
 ثبت دستی با کلیک داخل خط زمان انجام می‌شود؛ ویرایش دسته، تسک و بازه با کلیک روی بلاک در پنجرهٔ ویرایش باز می‌شود. کارت‌های آمار و راهنما حذف شده‌اند و کارت تایمر اسکرول داخلی ندارد.
-لبهٔ پایین بلاک ثبت‌شده یا پیش‌نویس را بکشید تا ساعت پایان با پیش‌نمایش تغییر کند؛ رهاکردن لبهٔ بلاک ثبت‌شده تغییر را ذخیره می‌کند. کلیدهای ↑/↓ روی دستگیره نیز مدت را پنج دقیقه تغییر می‌دهند؛ Escape کشیدن را لغو می‌کند. افزایش تا شروع فعالیت بعدی یا پایان روز محدود است.
+لبهٔ بالا یا پایین بلاک ثبت‌شده یا پیش‌نویس را بکشید تا ساعت شروع یا پایان با پیش‌نمایش تغییر کند؛ رهاکردن لبهٔ بلاک ثبت‌شده تغییر را ذخیره می‌کند. کلیدهای ↑/↓ روی هر دستگیره نیز همان لبه را پنج دقیقه جابه‌جا می‌کنند؛ Escape کشیدن را لغو می‌کند. تغییر بازه به فعالیت قبلی/بعدی یا بیرون روز عبور نمی‌کند.
 دقت ثبت یک دقیقه و حداقل زمان توقف فوری یک دقیقه است؛ عبور از نیمه‌شب خودکار بین روزها تقسیم می‌شود.
-اگر توقف با بازه‌ای هم‌پوشان باشد، تایمر حفظ می‌شود تا بازهٔ قبلی را اصلاح کنید و دوباره توقف را بزنید.
-V17 رکوردهای V16 را حفظ می‌کند؛ برای endpointهای جدید backend باید با نسخهٔ جدید راه‌اندازی شود.
+شروع تایمر داخل لاگ موجود و ثبت/ویرایش دستی داخل بازهٔ تایمر جاری از ابتدا با 409 رد می‌شود. اگر تایمر معمولی بعداً به یک لاگ قدیمی برسد، «ثبت و پایان» فقط بخش آزاد تا شروع آن لاگ را ثبت و تایمر را متوقف می‌کند. برای هم‌پوشانی قدیمی پومودورو، بازهٔ قبلی را اصلاح کنید یا «لغو تایمر» را بزنید تا بدون ثبت زمان متوقف شود.
+V18 تایمرهای V17 را حفظ و مدت اختیاری پومودورو را اضافه می‌کند؛ برای endpoint و migration جدید backend باید restart شود.
 
 | Method | Endpoint | Purpose |
 |---|---|---|
 | GET | `/api/v1/activity-logs?date=YYYY-MM-DD` | فعالیت‌های واقعی روز، متعلق به کاربر جاری |
 | POST | `/api/v1/activity-logs` | `{date,title,category,startMinute,endMinute}`؛ دسته `work/study/rest/personal` |
 | PUT, DELETE | `/api/v1/activity-logs/{id}` | ویرایش کامل / حذف صریح؛ 404 برای رکورد دیگران؛ 409 برای هم‌پوشانی |
-| GET, POST | `/api/v1/activity-timer` | تایمر جاری یا null / شروع با `{title,timeZone}` |
-| POST | `/api/v1/activity-timer/stop` | ثبت تراکنشی بازه‌های نهایی و توقف؛ تکرار توقف بدون اثر |
+| GET, POST, DELETE | `/api/v1/activity-timer` | تایمر جاری یا null / شروع با `{title,timeZone,plannedMinutes?}` / لغو بدون ثبت؛ شروع هم‌پوشان 409 |
+| POST | `/api/v1/activity-timer/stop` | ثبت تراکنشی بازهٔ واقعی و توقف؛ پومودورو حداکثر تا مدت انتخابی، تکرار توقف بدون اثر |
 
-بررسی دستی: یک فعالیت ثبت و صفحه را تازه کنید؛ سپس عنوان/بازه را ویرایش کنید، روز را تغییر دهید و بازگردید، بازهٔ هم‌پوشان را امتحان و حذف را تأیید کنید.
+بررسی دستی: یک فعالیت ثبت و صفحه را تازه کنید؛ سپس عنوان/بازه را ویرایش کنید، روز را تغییر دهید و بازگردید، بازهٔ هم‌پوشان را امتحان و حذف را تأیید کنید. روی یک لاگ موجود شروع تایمر را امتحان کنید و 409 بگیرید؛ سپس در زمان آزاد تایمر را شروع کنید و ثبت دستی هم‌پوشان را امتحان کنید. «لغو تایمر» باید تایمر را بدون ساخت لاگ پاک کند. یک پومودوروی ۲۵ دقیقه‌ای با عنوان شروع کنید و بلاک ۲۵ دقیقه‌ای امروز را ببینید؛ زودتر Stop کنید و کوتاه‌شدن همان بلاک را بررسی کنید؛ Start بعدی باید دوباره عنوان بخواهد و بلاک تازه بسازد.
 
 Single-user, local-first planner. Normative specs live in [`docs/`](docs/) (PRD, domain rules, API contract, data model); agent rules in [`AGENTS.md`](AGENTS.md).
 
@@ -161,8 +163,7 @@ MVP v0 so far (G-01 … G-03):
     reorder it; it stays in its own card (cannot be dropped on another goal) and long lists scroll while dragging.
 25. **آیتم‌های تمرکز** (design `ui/focus item.png`): goals (priority order) → their focus items (manual order) → tasks, as
     an expandable table: all goals start collapsed on each visit and open individually; title with a progress ring on its right (goal: Outcome; focus item: done ÷ active tasks), task
-    priority, task count, deadline. Search filters all three levels. Tick a task, «+ به برنامه امروز» puts it on today's plan and this week atomically in one click
-    (shows both «✓ در برنامه امروز» and «✓ در برنامه هفتگی»), «+ به برنامه هفتگی» puts it on this week without a day in one click (shows «✓ در برنامه هفتگی»; on the weekly page its day column says «بدون روز»), «افزودن تسک جدید» / «افزودن آیتم تمرکز جدید برای این هدف» add inline, «افزودن
+    priority, task count, deadline. Search filters all three levels. Open coral «+ زمان‌بندی» or the turquoise calendar label to reveal «امروز»، «این هفته» and «هفته بعد» in the row. The selected option has a turquoise check. Use coral «حذف از برنامه» to clear the assignment. Try Tab and Escape, then reload to confirm the selected plan persists. «امروز» saves to the daily plan and this week, and the week choices save without a day. The checkbox controls completion independently. Completed tasks keep their calendar label when scheduled and have a blank planning cell when unscheduled. «افزودن تسک جدید» / «افزودن آیتم تمرکز جدید برای این هدف» add inline, «افزودن
     آیتم تمرکز» opens a popup. Tasks linked to a goal without a focus item have their own group; items without a goal
     are under «بدون هدف». The previous list with all filters (incl. archived) is at «فهرست کامل و فیلترها» (`/focus/list`).
     Only the table scrolls (title, search and the column header stay in place; on phones the page scrolls normally).
@@ -174,7 +175,7 @@ MVP v0 so far (G-01 … G-03):
     Columns: task, goal, focus item, priority (click to change), deadline/day (choose another Saturday–Friday day in place;
     a planned task moves between daily plans, a deadline-only task updates its due date, and «بدون روز» gets planned), «+ امروز», status. Use ‹ › / «این هفته»
     to change week (`?week=YYYY-MM-DD`), search, Filter (status/priority/goal), Sort, and «افزودن تسک هفتگی» (creates
-    the task and puts it on the chosen day). Click the status chip to mark a task done/undone. Only the table scrolls.
+    the task and puts it on the chosen day). The status chip opens the three persisted task states «انجام‌نشده / در حال انجام / انجام‌شده» and never removes planning. Its adjacent ⋮ menu offers «خارج کردن از برنامه»، «انتقال به هفتهٔ بعد» and «انجام‌شده»; moving adds the task to the next week without a day and only then removes all of its current-week plan entries. Only the table scrolls.
 27b. **تایم‌باکس** (`/weekly?view=timebox`, switch «فهرست / تایم‌باکس» at the top of برنامه هفتگی; design: owner screenshot):
     a Saturday–Friday × 06:00–24:00 grid of time blocks with «تسک‌های این هفته» beside it (unfinished week tasks with the
     time already boxed). Click an empty slot or «افزودن بلاک زمانی» → dialog (task or free title, day, from/to in 15-minute
@@ -199,6 +200,7 @@ MVP v0 so far (G-01 … G-03):
 24c. **افزودن هدف در خود ردیف**: «افزودن هدف» no longer opens a dialog: a new card of the same size appears after the last goal (left), the board scrolls to it and its title field is focused; fill title, description, period type, status, period and optional deadline, «تایید» creates it (it becomes a normal card), «انصراف» or Esc removes the draft. Empty title shows the error inside the card.
 24b. **فلش‌های صفحهٔ اهداف**: when there are more goals than fit, round ‹ › buttons sit in empty gutters left and right of the cards (never on top of them); each click scrolls one card smoothly, the one with nothing further dims (› at priority 1, ‹ at the last goal).
 25b. **یادداشت آیتم تمرکز** (after the backend restart for V15): in the «اولویت» column of each focus item (next to its «اولویت n» label, before «تعداد تسک») a «📄 یادداشت» button (with the count when there are notes) and a turquoise «＋ تسک»: «＋ تسک» drops a box down under the row — type the title, «افزودن» (or Enter) puts the task into that item and opens its list, the box stays open for more, Esc/✕ closes it (the old «افزودن تسک جدید» under the list is gone); «یادداشت» — or clicking the item name, or ⋮ → «یادداشت‌ها» — opens a pop-up: write a note and «افزودن یادداشت» (or Ctrl/⌘+Enter), newest first, «ویرایش» / «حذف» per note. Notes never appear as tasks. The details page is still under ⋮ → «جزئیات و ویرایش».
+25c. **یادداشت تسک** (after the backend restart for V19). On `/focus`, open a focus item and use «یادداشت» beside a task's priority. Add a note, edit it, and reload the page to check the text and the count. Open a second task to verify that each task has its own list. Delete the note from the first task and check that its badge updates. Archiving retains the notes, and permanent task deletion removes them.
 28g. **جابه‌جایی در تقویم** (after the backend restart for the new endpoint): in the calendar slide (ماه / هفته) drag a task onto another day — the target day lights up, a turquoise copy follows the pointer, Esc cancels; a planned task moves on the daily plans, a deadline-only task (⚑) gets that day as its deadline, a task that is both keeps its deadline. In the day view «روز قبل / روز بعد» do the same without a mouse.
 28d. **عادت‌ها** (dashboard, after the backend restart for V14): the round turquoise ＋ at the bottom-left of the card («افزودن عادت») adds a habit (same round ＋ on «کارهای روزانه»); each row has a checkbox for today and seven circles شنبه…جمعه — click to tick/untick a day (future days disabled), reload keeps them; ⋮ → «بایگانی عادت» hides it (its days stay).
 27c. **جزئیات تسک در برنامه هفتگی**: click a task title on /weekly (list, or the side panel / block ⋮ «جزئیات تسک» in تایم‌باکس) → a pop-up with all details; «ویرایش» turns the same view into inputs in place (ذخیره / انصراف), «انجام شد» toggles, Esc/✕/«بستن»/backdrop close; the page is not left. On آیتم‌های تمرکز the task ⋮ «ویرایش» opens the same pop-up straight in the edit form.
@@ -302,6 +304,9 @@ Implemented endpoints so far:
 | GET, POST | `/api/v1/focus-items/{id}/notes` | notes of a focus item, newest first / `{"body"}` → 201 (409 `focus_item_archived`; 404 foreign/unknown) |
 | GET | `/api/v1/focus-item-notes/counts` | `[{focusItemId, count}]` for items that have notes |
 | PUT, DELETE | `/api/v1/focus-item-notes/{noteId}` | replace the text / delete (204); 409 `focus_item_archived` |
+| GET, POST | `/api/v1/tasks/{taskId}/notes` | list newest first / create with `{"body"}` → 201 and `Location` |
+| GET | `/api/v1/task-notes/counts` | `[{taskId,count}]` for owned, active tasks with notes |
+| PUT, DELETE | `/api/v1/task-notes/{noteId}` | replace with `{"body"}` / delete (204); archived task → 409 `task_archived`, foreign or unknown note → 404 |
 | GET | `/api/v1/habits?from=&to=[&archived=true]` | Read-only: your active (or archived) habits in creation order with `doneDates` inside from..to (≤ 62 days) |
 | POST | `/api/v1/habits` | `{"title"}` → 201 |
 | PATCH | `/api/v1/habits/{id}` | `{"title"?, "archived"?}`; archiving hides the habit and keeps its days; 404 for another user's |

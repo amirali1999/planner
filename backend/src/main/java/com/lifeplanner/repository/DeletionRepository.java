@@ -56,8 +56,10 @@ public class DeletionRepository {
                 .params(UtcTimestamps.toDb(now), childGoalId, user()).update();
     }
 
-    /** Removes the task's time blocks, weekly and daily plan items, then the task. */
+    /** Removes the task's notes, time blocks and plan items, then the task. */
     public void deleteTask(String taskId) {
+        db.sql("DELETE FROM task_notes WHERE task_id IN (SELECT id FROM tasks WHERE id = ? AND user_id = ?)")
+                .params(taskId, user()).update();
         db.sql("DELETE FROM time_blocks WHERE task_id = ? AND user_id = ?").params(taskId, user()).update();
         db.sql("DELETE FROM weekly_plan_items WHERE task_id = ? AND user_id = ?").params(taskId, user()).update();
         db.sql("DELETE FROM daily_plan_items WHERE task_id = ? AND task_id IN (SELECT id FROM tasks WHERE user_id = ?)")

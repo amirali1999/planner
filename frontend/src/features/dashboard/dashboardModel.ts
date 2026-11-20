@@ -94,6 +94,11 @@ export function resetTimer(durationSec = FOCUS_SECONDS): TimerState {
   return { durationSec, startedAt: null, elapsedSec: 0 };
 }
 
+/** Remaining whole seconds of a persisted Pomodoro; delayed clients never make it negative. */
+export function persistedPomodoroRemaining(startedAt: number, plannedMinutes: number, now: number): number {
+  return Math.max(0, Math.min(plannedMinutes * 60, plannedMinutes * 60 - Math.floor((now - startedAt) / 1000)));
+}
+
 /** mm:ss with Latin digits (formatted to Persian by the caller). */
 export function clock(seconds: number): string {
   const m = Math.floor(seconds / 60);

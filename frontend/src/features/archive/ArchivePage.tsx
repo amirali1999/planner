@@ -247,6 +247,7 @@ function ConfirmDelete({ target, impact, busy, onCancel, onConfirm }: {
               <ul className="archive-impact"><li>{formatNumber(impact.tasks)} تسکِ این آیتم تمرکز هم حذف می‌شوند (و از برنامه‌های روزانه برداشته می‌شوند)</li></ul>
             )}
             {target.kind === 'task' && <p className="meta">این تسک از همهٔ برنامه‌های روزانه هم برداشته می‌شود.</p>}
+            {impact.tasks > 0 && <p className="meta">یادداشت‌های تسک‌های حذف‌شده هم برای همیشه پاک می‌شوند.</p>}
           </div>
           <div className="form__actions">
             <button type="button" className="button archive-btn--danger" disabled={busy} onClick={onConfirm}>{busy ? 'در حال حذف…' : 'حذف برای همیشه'}</button>

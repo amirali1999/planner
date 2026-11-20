@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DailyPlan } from '../planning/types';
 import type { GoalCard } from './types';
 import {
-  clock, distinctPlannedTasks, FOCUS_SECONDS, monthDays, orderGoals, outcomeSummary, pauseTimer, remaining, resetTimer, startTimer, weekDays, withoutArchived,
+  clock, distinctPlannedTasks, FOCUS_SECONDS, monthDays, orderGoals, outcomeSummary, pauseTimer, persistedPomodoroRemaining, remaining, resetTimer, startTimer, weekDays, withoutArchived,
 } from './dashboardModel';
 
 const goal = (id: string, outcome: number | null, periodType: GoalCard['periodType'] = 'monthly'): GoalCard => ({
@@ -56,6 +56,12 @@ describe('dashboard model', () => {
     expect(remaining(t, 1_000_000 + FOCUS_SECONDS * 1000)).toBe(0); // never negative
     expect(clock(FOCUS_SECONDS)).toBe('25:00');
     expect(clock(59)).toBe('00:59');
+  });
+
+  it('derives a persisted Pomodoro countdown after reload and clamps at zero', () => {
+    expect(persistedPomodoroRemaining(2_000, 25, 1_000)).toBe(25 * 60);
+    expect(persistedPomodoroRemaining(1_000, 25, 61_000)).toBe(24 * 60);
+    expect(persistedPomodoroRemaining(1_000, 25, 25 * 60_000 + 10_000)).toBe(0);
   });
 });
 

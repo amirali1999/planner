@@ -40,6 +40,15 @@ is allowed for correcting the personal log. V16 is additive and preserves existi
 V17 rebuilds activity_logs preserving V16 rows, removing the five-minute restriction and adding nullable task_id
 (ON DELETE SET NULL). activity_timers stores one running title/UTC started_at/IANA time_zone per user.
 Completed intervals are written only on explicit stop, in the same transaction as clearing the running timer.
+V18 adds nullable `activity_timers.planned_minutes` with a 1..120 CHECK. Null identifies the ordinary open-ended timer;
+a value identifies a persisted Pomodoro whose completed log is capped at that duration. Existing V17 timers migrate as null.
+The service treats active timer intervals and completed `activity_logs` as mutually exclusive: timer start checks existing
+logs, while manual log create/update checks the running timer. Explicit timer cancellation deletes only `activity_timers`.
+
+V19 adds `task_notes(id,task_id,body,created_at,updated_at)` with a required foreign key to `tasks` and an index on
+`(task_id,created_at,id)`. Notes inherit ownership from the task. Archiving keeps them readable, and the existing
+permanent task deletion transaction removes them before deleting the task. V19 preserves existing task rows.
+
 1. Flyway versions are forward-only, no rewrite of applied scripts.
 2. SQLite `PRAGMA foreign_keys=ON` on each connection and `busy_timeout` configured and integration tested.
 3. Non-destructive archive; no `ON DELETE CASCADE` for user data history by default.

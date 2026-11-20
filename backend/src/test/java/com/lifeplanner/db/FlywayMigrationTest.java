@@ -6,6 +6,7 @@ import org.flywaydb.core.api.FlywayException;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.jdbc.core.simple.JdbcClient;
+import org.sqlite.SQLiteException;
 import javax.sql.DataSource;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -45,7 +46,7 @@ class FlywayMigrationTest {
                     ORDER BY name""").query(String.class).list();
             assertThat(tables).containsExactly(
                     "activity_logs", "activity_timers", "daily_plan_items", "daily_plans", "focus_item_notes", "focus_items", "goal_history", "goals", "habit_checks", "habits", "inbox_items",
-                    "key_result_checkins", "key_results", "milestones", "refresh_tokens", "signing_keys", "tasks", "time_blocks", "users", "weekly_plan_items");
+                    "key_result_checkins", "key_results", "milestones", "refresh_tokens", "signing_keys", "task_notes", "tasks", "time_blocks", "users", "weekly_plan_items");
             assertThat(db.sql("SELECT count(*) FROM flyway_schema_history WHERE version = '1' AND success = 1")
                     .query(Integer.class).single()).isEqualTo(1);
             // v1 single-KPI model must not come back.
@@ -273,11 +274,62 @@ class FlywayMigrationTest {
                     .params(log,owner,"2026-11-14","keep","work",600,660,TestRows.NOW,TestRows.NOW).update();
         }
         try (HikariDataSource ds = open(file)) {
-            assertThat(flyway(ds).migrate().migrationsExecuted).isEqualTo(1);
+            assertThat(flyway(ds).migrate().migrationsExecuted).isEqualTo(MigrationCount.APPLIED - 16);
             JdbcClient db = JdbcClient.create(ds);
             assertThat(db.sql("SELECT title FROM activity_logs WHERE id=?").param(log).query(String.class).single()).isEqualTo("keep");
             db.sql("UPDATE activity_logs SET start_minute=601 WHERE id=?").param(log).update();
             assertThat(db.sql("PRAGMA foreign_key_check").query((rs,n)->rs.getString(1)).list()).isEmpty();
+        }
+    }
+
+    @Test
+    void v18PreservesRunningTimerAndAddsBoundedPomodoroDuration() {
+        Path file = dir.resolve("v17-timer.db");
+        String owner = TestRows.id();
+        try (HikariDataSource ds = open(file)) {
+            Flyway.configure().dataSource(ds).locations("classpath:db/migration").cleanDisabled(true).target("17").load().migrate();
+            JdbcClient db = JdbcClient.create(ds);
+            db.sql("INSERT INTO users(id,email,password_hash,created_at,updated_at) VALUES (?,?,?,?,?)")
+                    .params(owner,"pomodoro-upgrade@test.local","hash",TestRows.NOW,TestRows.NOW).update();
+            db.sql("INSERT INTO activity_timers(user_id,title,started_at,time_zone) VALUES (?,?,?,?)")
+                    .params(owner,"keep running",TestRows.NOW,"Asia/Tehran").update();
+        }
+        try (HikariDataSource ds = open(file)) {
+            assertThat(flyway(ds).migrate().migrationsExecuted).isEqualTo(MigrationCount.APPLIED - 17);
+            JdbcClient db = JdbcClient.create(ds);
+            assertThat(db.sql("SELECT title FROM activity_timers WHERE user_id=?").param(owner).query(String.class).single())
+                    .isEqualTo("keep running");
+            assertThat(db.sql("SELECT count(*) FROM activity_timers WHERE user_id=? AND planned_minutes IS NULL")
+                    .param(owner).query(Integer.class).single()).isEqualTo(1);
+            db.sql("UPDATE activity_timers SET planned_minutes=25 WHERE user_id=?").param(owner).update();
+            assertThatThrownBy(() -> db.sql("UPDATE activity_timers SET planned_minutes=121 WHERE user_id=?")
+                    .param(owner).update()).isInstanceOf(Exception.class);
+        }
+    }
+
+    @Test
+    void v19PreservesExistingTasksAndCreatesNotesWithEnforcedTaskOwnershipLink() {
+        Path file = dir.resolve("v18-tasks.db");
+        String taskId;
+        try (HikariDataSource ds = open(file)) {
+            Flyway.configure().dataSource(ds).locations("classpath:db/migration").cleanDisabled(true).target("18").load().migrate();
+            taskId = TestRows.task(JdbcClient.create(ds), null);
+        }
+        String noteId = TestRows.id();
+        try (HikariDataSource ds = open(file)) {
+            assertThat(flyway(ds).migrate().migrationsExecuted).isEqualTo(MigrationCount.APPLIED - 18);
+            JdbcClient db = JdbcClient.create(ds);
+            assertThat(db.sql("SELECT title FROM tasks WHERE id = ?")
+                    .param(taskId).query(String.class).single()).isEqualTo("مطالعه فصل دوم");
+            String insert = "INSERT INTO task_notes (id, task_id, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?)";
+            assertThatThrownBy(() -> db.sql(insert).params(noteId, TestRows.id(), "یادداشت", TestRows.NOW, TestRows.NOW)
+                    .update()).hasRootCauseInstanceOf(SQLiteException.class).hasMessageContaining("FOREIGN KEY constraint failed");
+            assertThat(db.sql(insert).params(noteId, taskId, "یادداشت", TestRows.NOW, TestRows.NOW).update()).isEqualTo(1);
+        }
+        try (HikariDataSource ds = open(file)) {
+            assertThat(flyway(ds).migrate().migrationsExecuted).isZero();
+            assertThat(JdbcClient.create(ds).sql("SELECT body FROM task_notes WHERE id = ?")
+                    .param(noteId).query(String.class).single()).isEqualTo("یادداشت");
         }
     }
 

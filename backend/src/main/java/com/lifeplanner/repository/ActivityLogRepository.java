@@ -44,12 +44,16 @@ public class ActivityLogRepository {
     }
 
     public Optional<String> findOverlapping(LocalDate date, int start, int end, String exceptId) {
+        return findFirstOverlapping(date, start, end, exceptId).map(ActivityLog::id);
+    }
+
+    public Optional<ActivityLog> findFirstOverlapping(LocalDate date, int start, int end, String exceptId) {
         return db.sql("""
-                SELECT id FROM activity_logs
+                SELECT %s FROM activity_logs
                 WHERE user_id = ? AND local_date = ? AND start_minute < ? AND end_minute > ? AND id <> ?
-                ORDER BY start_minute LIMIT 1""")
+                ORDER BY start_minute, created_at, id LIMIT 1""".formatted(COLUMNS))
                 .params(user(), date.toString(), end, start, exceptId == null ? "" : exceptId)
-                .query(String.class).optional();
+                .query(MAPPER).optional();
     }
 
     public void insert(ActivityLog log) {

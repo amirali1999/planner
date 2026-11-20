@@ -1,6 +1,6 @@
 import { apiRequest } from '../../shared/api/client';
 import type { DeletionResult } from '../archive/types';
-import type { CreateTaskRequest, Task, TaskFilters, UpdateTaskRequest } from './types';
+import type { CreateTaskRequest, Task, TaskFilters, TaskNote, UpdateTaskRequest } from './types';
 
 export const tasksApi = {
   list: (filters: TaskFilters, signal?: AbortSignal) => {
@@ -15,4 +15,15 @@ export const tasksApi = {
     apiRequest<Task>(`/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body }),
   /** Permanent; only an archived task (409 not_archived otherwise). Also removes it from daily plans. */
   remove: (taskId: string) => apiRequest<DeletionResult>(`/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }),
+};
+
+export const taskNotesApi = {
+  list: (taskId: string, signal?: AbortSignal) =>
+    apiRequest<TaskNote[]>(`/tasks/${encodeURIComponent(taskId)}/notes`, { signal }),
+  add: (taskId: string, body: string) =>
+    apiRequest<TaskNote>(`/tasks/${encodeURIComponent(taskId)}/notes`, { method: 'POST', body: { body } }),
+  update: (noteId: string, body: string) =>
+    apiRequest<TaskNote>(`/task-notes/${encodeURIComponent(noteId)}`, { method: 'PUT', body: { body } }),
+  remove: (noteId: string) => apiRequest<void>(`/task-notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }),
+  counts: (signal?: AbortSignal) => apiRequest<{ taskId: string; count: number }[]>('/task-notes/counts', { signal }),
 };

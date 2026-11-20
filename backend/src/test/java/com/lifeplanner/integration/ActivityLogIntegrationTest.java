@@ -9,6 +9,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import java.time.LocalDate;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -99,7 +101,11 @@ class ActivityLogIntegrationTest {
         input = input.substring(0,input.length()-1) + ",\"taskId\":\"" + task + "\"}";
         create(input).andExpect(status().isCreated()).andExpect(jsonPath("$.taskId").value(task));
         mvc.perform(post("/api/v1/activity-timer").contentType(MediaType.APPLICATION_JSON)
-                .content("{\"title\":\"timer\",\"timeZone\":\"UTC\"}")).andExpect(status().isOk());
+                .content("{\"title\":\"invalid\",\"timeZone\":\"UTC\",\"plannedMinutes\":121}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("validation_error"));
+        mvc.perform(post("/api/v1/activity-timer").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"timer\",\"timeZone\":\"UTC\",\"plannedMinutes\":25}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.plannedMinutes").value(25));
         mvc.perform(post("/api/v1/activity-timer").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"title\":\"second\",\"timeZone\":\"UTC\"}")).andExpect(status().isConflict());
         mvc.perform(get("/api/v1/activity-logs").param("date",day.toString())).andExpect(jsonPath("$.length()").value(1));
@@ -124,6 +130,52 @@ class ActivityLogIntegrationTest {
                 .andExpect(status().isNotFound());
         mvc.perform(post("/api/v1/activity-logs").header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON).content(body(day, "مال او", "rest", 600, 660)))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void timerAndManualLogsRejectEachOthersIntervalsAndTimerCanBeCancelled() throws Exception {
+        String token = JsonPath.read(mvc.perform(post("/api/v1/auth/register").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"timer-overlap-" + DAY.incrementAndGet() + "@test.local\",\"password\":\"password-123\"}"))
+                .andReturn().getResponse().getContentAsString(), "$.accessToken");
+        String zoneName = List.of("UTC", "Asia/Tehran", "Pacific/Kiritimati", "Pacific/Honolulu").stream()
+                .filter(candidate -> {
+                    int hour = Instant.now().atZone(ZoneId.of(candidate)).getHour();
+                    return hour >= 2 && hour <= 21;
+                }).findFirst().orElseThrow();
+        var localNow = Instant.now().atZone(ZoneId.of(zoneName));
+        LocalDate day = localNow.toLocalDate();
+        String existing = JsonPath.read(mvc.perform(post("/api/v1/activity-logs")
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content(body(day, "existing", "work", 0, 1440)))
+                .andExpect(status().isCreated()).andReturn().getResponse().getContentAsString(), "$.id");
+
+        mvc.perform(post("/api/v1/activity-timer").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"blocked timer\",\"timeZone\":\"" + zoneName + "\"}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("activity_log_overlap"));
+
+        mvc.perform(delete("/api/v1/activity-logs/" + existing).header("Authorization", "Bearer " + token))
+                .andExpect(status().isNoContent());
+        String startedAt = JsonPath.read(mvc.perform(post("/api/v1/activity-timer")
+                        .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"running\",\"timeZone\":\"" + zoneName + "\"}"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString(), "$.startedAt");
+        var started = Instant.parse(startedAt).atZone(ZoneId.of(zoneName));
+        int minute = started.getHour() * 60 + started.getMinute();
+        int end = Math.min(1440, minute + 1);
+        mvc.perform(post("/api/v1/activity-logs").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body(started.toLocalDate(), "blocked log", "work", minute, end)))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("activity_timer_overlap"));
+
+        mvc.perform(delete("/api/v1/activity-timer").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNoContent());
+        mvc.perform(get("/api/v1/activity-timer").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk()).andExpect(jsonPath("$").doesNotExist());
+        mvc.perform(post("/api/v1/activity-logs").header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body(started.toLocalDate(), "allowed after cancel", "work", minute, end)))
                 .andExpect(status().isCreated());
     }
 }
